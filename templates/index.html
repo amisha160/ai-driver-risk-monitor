@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Driver Risk Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="app">
+
+    <div class="title-box">
+        <h1>🚘 AI DRIVER RISK MONITOR</h1>
+        <p>Smart Driving Intelligence • Adaptive Risk Profiling</p>
+    </div>
+
+    <div class="grid">
+
+        <div class="card">
+            <h2>Driver Inputs</h2>
+
+            <form id="riskForm" enctype="multipart/form-data">
+                <label>Speed Variation</label>
+                <input type="number" step="0.1" name="s1" required>
+
+                <label>Acceleration</label>
+                <input type="number" step="0.1" name="s2" required>
+
+                <label>Steering Stability</label>
+                <input type="number" step="0.1" name="s3" required>
+
+                <label>Driver Condition</label>
+                <input type="text" name="text" placeholder="sleepy / tired / phone">
+
+                <label>Upload Driver Image</label>
+                <input type="file" name="image">
+
+                <button type="submit">Analyze Driver</button>
+            </form>
+
+            <a href="/download_report">
+                <button class="secondary-btn">⬇ Download Report</button>
+            </a>
+        </div>
+
+
+        <div class="card">
+            <h2>Live Risk Meter</h2>
+
+            <div class="meter-box">
+                <div id="circle">0%</div>
+            </div>
+
+            <h3 id="status">Waiting...</h3>
+
+            <div class="info-box">
+                <p><b>Suggestion:</b> <span id="suggestion">---</span></p>
+                <p><b>Image Analysis:</b> <span id="imageState">---</span></p>
+            </div>
+        </div>
+
+
+        <div class="card map-card">
+            <h2>Smart Route Map</h2>
+
+            <button onclick="getLocation()">📍 Detect My Location</button>
+
+            <input id="destination" type="text" placeholder="Enter destination">
+
+            <button onclick="showRoute()">Show Route</button>
+
+            <iframe
+                id="mapFrame"
+                src="https://maps.google.com/maps?q=Bangalore&z=13&output=embed">
+            </iframe>
+        </div>
+
+
+        <div class="card history-card">
+            <h2>Recent Driving Sessions</h2>
+            <div id="historyBox">No history yet</div>
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+const synth = window.speechSynthesis;
+
+document.getElementById("riskForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+
+    let formData = new FormData(this);
+
+    let response = await fetch("/predict", {
+        method: "POST",
+        body: formData
+    });
+
+    let data = await response.json();
+
+    if(data.error){
+        alert(data.error);
+        return;
+    }
+
+    document.getElementById("circle").innerText = data.risk + "%";
+    document.getElementById("circle").style.borderColor = data.color;
+    document.getElementById("circle").style.boxShadow = "0 0 40px " + data.color;
+
+    document.getElementById("status").innerText = data.status;
+    document.getElementById("status").style.color = data.color;
+
+    document.getElementById("suggestion").innerText = data.suggestion;
+    document.getElementById("imageState").innerText = data.image_state;
+
+    if(data.status === "HIGH RISK"){
+        let speech = new SpeechSynthesisUtterance(
+            "Warning. High risk detected. Please take a break."
+        );
+        synth.speak(speech);
+    }
+
+    loadHistory();
+});
+
+async function loadHistory(){
+    let res = await fetch("/history");
+    let data = await res.json();
+
+    let html = "";
+
+    data.reverse().forEach(item=>{
+        html += `
+            <div class="history-item">
+                <b>${item.time}</b><br>
+                Risk: ${item.risk_percent}% |
+                Status: ${item.status}
+            </div>
+        `;
+    });
+
+    document.getElementById("historyBox").innerHTML = html || "No history yet";
+}
+
+let currentLat = "";
+let currentLon = "";
+
+function getLocation(){
+    if (!navigator.geolocation){
+        alert("Geolocation not supported in this browser");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        function(position){
+            currentLat = position.coords.latitude;
+            currentLon = position.coords.longitude;
+
+            document.getElementById("mapFrame").src =
+                `https://maps.google.com/maps?q=${currentLat},${currentLon}&z=14&output=embed`;
+        },
+        function(error){
+            alert("Location access denied or unavailable.");
+            console.log(error);
+        },
+        {
+            enableHighAccuracy:true,
+            timeout:10000,
+            maximumAge:0
+        }
+    );
+}
+function showRoute(){
+    let destination = document.getElementById("destination").value;
+
+    if(destination===""){
+        alert("Enter destination");
+        return;
+    }
+
+    document.getElementById("mapFrame").src =
+        `https://maps.google.com/maps?q=${destination}&output=embed`;
+}
+
+loadHistory();
+</script>
+
+</body>
+</html>
