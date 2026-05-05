@@ -17,26 +17,27 @@
 
     <div class="grid">
 
+        <!-- ── CARD 1: Driver Inputs ── -->
         <div class="card">
             <h2>Driver Inputs</h2>
 
             <form id="riskForm" enctype="multipart/form-data">
                 <label>Speed Variation</label>
-                <input type="number" step="0.1" name="s1" required>
+                <input type="number" step="0.1" name="s1" placeholder="e.g. 0.5" required>
 
                 <label>Acceleration</label>
-                <input type="number" step="0.1" name="s2" required>
+                <input type="number" step="0.1" name="s2" placeholder="e.g. 0.6" required>
 
                 <label>Steering Stability</label>
-                <input type="number" step="0.1" name="s3" required>
+                <input type="number" step="0.1" name="s3" placeholder="e.g. 0.4" required>
 
                 <label>Driver Condition</label>
-                <input type="text" name="text" placeholder="sleepy / tired / phone">
+                <input type="text" name="text" placeholder="sleepy / tired / phone / aggressive">
 
                 <label>Upload Driver Image</label>
-                <input type="file" name="image">
+                <input type="file" name="image" accept="image/*">
 
-                <button type="submit">Analyze Driver</button>
+                <button type="submit">🔍 Analyze Driver</button>
             </form>
 
             <a href="/download_report">
@@ -44,7 +45,7 @@
             </a>
         </div>
 
-
+        <!-- ── CARD 2: Live Risk Meter ── -->
         <div class="card">
             <h2>Live Risk Meter</h2>
 
@@ -55,20 +56,21 @@
             <h3 id="status">Waiting...</h3>
 
             <div class="info-box">
+                <p><b>Driver State:</b> <span id="driverState">---</span></p>
                 <p><b>Suggestion:</b> <span id="suggestion">---</span></p>
                 <p><b>Image Analysis:</b> <span id="imageState">---</span></p>
             </div>
         </div>
 
-
+        <!-- ── CARD 3: Smart Route Map ── -->
         <div class="card map-card">
             <h2>Smart Route Map</h2>
 
             <button onclick="getLocation()">📍 Detect My Location</button>
 
-            <input id="destination" type="text" placeholder="Enter destination">
+            <input id="destination" type="text" placeholder="Enter destination (e.g. Mysore)">
 
-            <button onclick="showRoute()">Show Route</button>
+            <button onclick="showRoute()">🗺 Show Route</button>
 
             <iframe
                 id="mapFrame"
@@ -76,19 +78,26 @@
             </iframe>
         </div>
 
-
+        <!-- ── CARD 4: Driving History ── -->
         <div class="card history-card">
             <h2>Recent Driving Sessions</h2>
             <div id="historyBox">No history yet</div>
         </div>
 
     </div>
-
 </div>
 
 <script>
 const synth = window.speechSynthesis;
 
+// ── FIXED: Voice alert messages for all 4 driver states ──
+const voiceMessages = {
+    "DISTRACTED": "Warning. You appear distracted. Please focus on the road.",
+    "DROWSY":     "Warning. Drowsiness detected. Please pull over and take a break.",
+    "AGGRESSIVE": "Alert. Aggressive driving detected. Please slow down immediately."
+};
+
+// ── Form submit → Predict ──
 document.getElementById("riskForm").addEventListener("submit", async function(e){
     e.preventDefault();
 
@@ -102,42 +111,59 @@ document.getElementById("riskForm").addEventListener("submit", async function(e)
     let data = await response.json();
 
     if(data.error){
-        alert(data.error);
+        alert("Error: " + data.error);
         return;
     }
 
+    // Update risk circle
     document.getElementById("circle").innerText = data.risk + "%";
     document.getElementById("circle").style.borderColor = data.color;
     document.getElementById("circle").style.boxShadow = "0 0 40px " + data.color;
 
+    // Update status label
     document.getElementById("status").innerText = data.status;
     document.getElementById("status").style.color = data.color;
 
-    document.getElementById("suggestion").innerText = data.suggestion;
-    document.getElementById("imageState").innerText = data.image_state;
+    // Update driver state badge
+    document.getElementById("driverState").innerText = data.status;
+    document.getElementById("driverState").style.color = data.color;
 
-    if(data.status === "HIGH RISK"){
-        let speech = new SpeechSynthesisUtterance(
-            "Warning. High risk detected. Please take a break."
-        );
+    // Update suggestion and image analysis
+    document.getElementById("suggestion").innerText  = data.suggestion;
+    document.getElementById("imageState").innerText  = data.image_state;
+
+    // ── FIXED: Voice alert triggers for DISTRACTED, DROWSY, AGGRESSIVE ──
+    if(voiceMessages[data.status]){
+        synth.cancel(); // Stop any previous speech
+        let speech = new SpeechSynthesisUtterance(voiceMessages[data.status]);
+        speech.rate   = 0.9;
+        speech.volume = 1.0;
         synth.speak(speech);
     }
 
     loadHistory();
 });
 
+// ── Load recent driving history ──
 async function loadHistory(){
-    let res = await fetch("/history");
+    let res  = await fetch("/history");
     let data = await res.json();
 
     let html = "";
 
-    data.reverse().forEach(item=>{
+    data.reverse().forEach(item => {
+        // Pick color based on status
+        let color = "#00ff88";
+        if(item.status === "DISTRACTED") color = "#ffd000";
+        if(item.status === "DROWSY")     color = "#ff8c00";
+        if(item.status === "AGGRESSIVE") color = "#ff3b3b";
+
         html += `
-            <div class="history-item">
+            <div class="history-item" style="border-left-color:${color}">
                 <b>${item.time}</b><br>
-                Risk: ${item.risk_percent}% |
-                Status: ${item.status}
+                Risk: <b style="color:${color}">${item.risk_percent}%</b> &nbsp;|&nbsp;
+                State: <b style="color:${color}">${item.status}</b><br>
+                <small style="color:#9aa4b2">${item.suggestion}</small>
             </div>
         `;
     });
@@ -145,12 +171,13 @@ async function loadHistory(){
     document.getElementById("historyBox").innerHTML = html || "No history yet";
 }
 
+// ── GPS Location Detection ──
 let currentLat = "";
 let currentLon = "";
 
 function getLocation(){
-    if (!navigator.geolocation){
-        alert("Geolocation not supported in this browser");
+    if(!navigator.geolocation){
+        alert("Geolocation not supported in this browser.");
         return;
     }
 
@@ -167,24 +194,30 @@ function getLocation(){
             console.log(error);
         },
         {
-            enableHighAccuracy:true,
-            timeout:10000,
-            maximumAge:0
+            enableHighAccuracy: true,
+            timeout:            10000,
+            maximumAge:         0
         }
     );
 }
-function showRoute(){
-    let destination = document.getElementById("destination").value;
 
-    if(destination===""){
-        alert("Enter destination");
+// ── Show Route to Destination ──
+function showRoute(){
+    let destination = document.getElementById("destination").value.trim();
+
+    if(destination === ""){
+        alert("Please enter a destination.");
         return;
     }
 
-    document.getElementById("mapFrame").src =
-        `https://maps.google.com/maps?q=${destination}&output=embed`;
+    let src = currentLat && currentLon
+        ? `https://maps.google.com/maps?saddr=${currentLat},${currentLon}&daddr=${encodeURIComponent(destination)}&output=embed`
+        : `https://maps.google.com/maps?q=${encodeURIComponent(destination)}&output=embed`;
+
+    document.getElementById("mapFrame").src = src;
 }
 
+// Load history on page load
 loadHistory();
 </script>
 
